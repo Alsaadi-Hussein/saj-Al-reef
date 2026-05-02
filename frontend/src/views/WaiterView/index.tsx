@@ -24,6 +24,7 @@ export default function WaiterView() {
         const r = payload.new
         setAlerts(prev => [{ id: r.id as number, table: r.table_ref as string, type: r.type as string, emoji: r.emoji as string, time: r.time as string }, ...prev])
       })
+      // @ts-ignore — Supabase v2 overload doesn't narrow correctly after chaining
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'alerts' }, (payload: { old: Row }) => {
         setAlerts(prev => prev.filter(a => a.id !== payload.old.id))
       })
