@@ -1,28 +1,35 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
-import type { KitchenOrder } from '../../types'
+import { useStore } from '../../store/useStore'
+import type { KitchenOrder, StockItem } from '../../types/index'
 
+// ─── Kitchen Sidebar ──────────────────────────────────────────
+const SIDEBAR_ITEMS = [
+  { id: 'kds',       label: 'شاشة المطبخ KDS', badge: 0,  icon: '🔍' },
+  { id: 'inventory', label: 'إدارة المخزون',   badge: 3,  icon: '📦' },
+  { id: 'alerts',    label: 'التنبيهات',        badge: 3,  icon: '🔔' },
+]
 
-export default function KitchenView() {
+// ─── KDS Screen ───────────────────────────────────────────────
+function KdsScreen() {
   const [orders, setOrders] = useState<KitchenOrder[]>([])
 
   useEffect(() => {
     api.getOrders().then(setOrders)
 
-    const channel = supabase
-      .channel('kitchen-orders')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload: { new: Record<string, string> }) => {
-        const r = payload.new
-        setOrders(prev => [{ id: r.id, table: r.table_ref, items: r.items, time: r.time, status: r.status as 'new' | 'ready' }, ...prev])
+    const ch = supabase.channel('kitchen-kds')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (p: { new: Record<string, string> }) => {
+        const r = p.new
+        setOrders(prev => [{ id: r.id, table: r.table_ref, items: r.items, time: r.time, status: r.status as 'new' | 'ready', createdAt: r.created_at }, ...prev])
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload: { new: Record<string, string> }) => {
-        const r = payload.new
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (p: { new: Record<string, string> }) => {
+        const r = p.new
         setOrders(prev => prev.map(o => o.id === r.id ? { ...o, status: r.status as 'new' | 'ready' } : o))
       })
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { supabase.removeChannel(ch) }
   }, [])
 
   async function markReady(id: string) {
@@ -30,66 +37,220 @@ export default function KitchenView() {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'ready' as const } : o))
   }
 
+  const activeOrders = orders.filter(o => o.status === 'new')
+  const urgentCount  = activeOrders.filter(o => api.getOrderMinutesAgo(o) > 15).length
+
   return (
-    <div className="p-4 bg-bk">
+    <div className="flex-1 overflow-y-auto p-5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#343434 transparent' }}>
       {/* Header */}
-      <div className="flex justify-between items-center mb-4">
-        <div>
-          <div className="text-[15px] font-medium text-white">SAJ AL-REEF | Kitchen Hub 🍳</div>
-          <div className="text-[11px] text-white/60 mt-0.5">الطلبات النشطة — مرتبة زمنياً | Active Orders</div>
+      <div className="flex justify-between items-start mb-5">
+        <div className="flex items-center gap-2">
+          {urgentCount > 0 && (
+            <span className="badge badge-err text-[11px] flex items-center gap-1">
+              <span className="text-sm">▲</span> {urgentCount} عاجل
+            </span>
+          )}
+          <span className="badge badge-ok text-[11px] flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse inline-block" />
+            مباشر
+          </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-ok animate-blink" />
-          <span className="text-[11px] text-ok">مباشر</span>
+        <div className="text-right">
+          <h1 className="text-[20px] font-semibold text-white">شاشة المطبخ KDS</h1>
+          <p className="text-[11px] text-white/45 mt-0.5">الطلبات النشطة - مرتبة زمنياً</p>
         </div>
       </div>
 
-      {/* Order cards */}
-      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(215px,1fr))' }}>
-        {orders.map((o, i) => {
-          const isNew   = o.status === 'new'
-          const isReady = o.status === 'ready'
-          return (
-            <div
-              key={o.id}
-              className="rounded-[13px] p-3.5 animate-slide-up"
-              style={{
-                background: '#1A1A1A',
-                border: `1px solid ${isReady ? '#4CAF50' : isNew ? 'rgba(220,169,92,0.4)' : '#242424'}`,
-                animationDelay: `${i * 0.08}s`,
-              }}
-            >
-              <div className="flex justify-between items-start mb-2.5">
-                <div>
-                  <div className={`text-[15px] font-medium ${isReady ? 'text-ok' : 'text-gold'}`}>
-                    {o.id} | {o.table}
-                  </div>
-                  <div className="text-[10px] text-white/40 mt-0.5">⏱ {o.time}</div>
+      {/* Order Cards */}
+      {activeOrders.length === 0 ? (
+        <div className="text-center py-20 text-white/25 text-[14px]">لا توجد طلبات نشطة ✓</div>
+      ) : (
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          {activeOrders.map((o, i) => {
+            const mins = api.getOrderMinutesAgo(o)
+            const urgent = mins > 15
+            return (
+              <div
+                key={o.id}
+                className="rounded-[13px] p-4 border animate-slide-up"
+                style={{
+                  background: '#111111',
+                  borderColor: urgent ? '#E24B4A' : 'rgba(220,169,92,0.35)',
+                  animationDelay: `${i * 0.06}s`,
+                }}
+              >
+                {/* Card Header */}
+                <div className="flex justify-between items-start mb-3">
+                  <span className="text-[11px] px-2 py-0.5 rounded-md font-medium text-black" style={{ background: '#DCA95C' }}>
+                    {o.table}
+                  </span>
+                  <span className="text-[17px] font-bold text-gold">{o.id}</span>
                 </div>
-                {isNew   && <span className="badge badge-gold animate-blink" style={{ animationDuration: '2s' }}>جديد</span>}
-                {isReady && <span className="badge badge-ok">✓ جاهز</span>}
-              </div>
 
-              <div className="text-[12px] text-white/75 bg-c1 rounded-[9px] p-2.5 mb-3 leading-relaxed">
-                {o.items}
-              </div>
+                {/* Items */}
+                <div className="text-[13px] font-medium text-white text-right mb-2 leading-snug">
+                  {o.items}
+                </div>
 
-              {isNew ? (
+                {/* Time */}
+                <div className="flex justify-end items-center gap-1 mb-3">
+                  <span className={`text-[11px] ${urgent ? 'text-err' : 'text-white/40'}`}>
+                    {mins > 0 ? `${mins} د مضت` : o.time}
+                  </span>
+                  <span className="text-[11px] text-white/30">⏱</span>
+                </div>
+
+                {/* Action */}
                 <button
                   onClick={() => markReady(o.id)}
-                  className="w-full py-2 rounded-[9px] text-[12px] font-medium bg-gold text-black
-                    hover:bg-gold-light active:scale-95 transition-all duration-200"
+                  className="w-full py-2 rounded-[9px] text-[12px] font-medium text-black hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer"
+                  style={{ background: '#DCA95C' }}
                 >
-                  ✓ Mark Ready — تم التحضير
+                  ✓ Ready / تم
                 </button>
-              ) : (
-                <div className="text-center text-[12px] text-ok py-2 rounded-[9px]" style={{ background: 'rgba(76,175,80,0.08)' }}>
-                  تم التحضير ✓
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Completed orders */}
+      {orders.filter(o => o.status === 'ready').length > 0 && (
+        <div className="mt-5">
+          <div className="text-[11px] text-white/30 text-right mb-3">الطلبات المكتملة</div>
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            {orders.filter(o => o.status === 'ready').slice(0, 6).map((o, i) => (
+              <div key={o.id} className="rounded-[11px] p-3 border border-ok/20 opacity-50" style={{ background: '#111111' }}>
+                <div className="flex justify-between items-center">
+                  <span className="badge badge-ok text-[10px]">✓ تم</span>
+                  <span className="text-[13px] text-gold font-medium">{o.id}</span>
                 </div>
-              )}
+                <div className="text-[11px] text-white/50 text-right mt-1.5 truncate">{o.items}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Inventory Screen ─────────────────────────────────────────
+function InventoryScreen() {
+  const [stock, setStock] = useState<StockItem[]>([])
+  useEffect(() => { api.getStock().then(setStock) }, [])
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#343434 transparent' }}>
+      <h1 className="text-[20px] font-semibold text-white text-right mb-5">إدارة المخزون</h1>
+      <div className="grid gap-3">
+        {stock.map((s, i) => {
+          const pct = Math.min((s.current / (s.minimum * 2)) * 100, 100)
+          const low = s.current < s.minimum
+          return (
+            <div key={i} className="rounded-xl p-4 border border-c3" style={{ background: '#111111' }}>
+              <div className="flex justify-between items-center mb-2">
+                <div className="flex items-center gap-2">
+                  {low && <span className="badge badge-warn text-[10px]">منخفض</span>}
+                  <span className="text-[12px] text-white/50">{s.current} / {s.minimum * 2} {s.unit}</span>
+                </div>
+                <span className="text-[13px] font-medium text-white">{s.name}</span>
+              </div>
+              <div className="h-[6px] rounded-full bg-c3">
+                <div
+                  className="h-[6px] rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%`, background: low ? '#E24B4A' : '#DCA95C' }}
+                />
+              </div>
+              <div className="flex justify-between mt-1.5">
+                <span className="text-[10px] text-white/30">الحد الأدنى: {s.minimum} {s.unit}</span>
+                <span className="text-[10px] text-white/30">المتوفر: {s.current} {s.unit}</span>
+              </div>
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Alerts Screen ────────────────────────────────────────────
+function AlertsScreen() {
+  const [alerts, setAlerts] = useState<{ id: number; msg: string; type: 'warn' | 'err' | 'ok'; time: string }[]>([
+    { id: 1, msg: 'الطاولة 7 تنتظر 22 دقيقة', type: 'err',  time: '7:35 م' },
+    { id: 2, msg: 'مخزون الجبنة منخفض',         type: 'warn', time: '7:20 م' },
+    { id: 3, msg: 'البيتزا جاهزة للتقديم',       type: 'ok',   time: '7:10 م' },
+  ])
+
+  function dismiss(id: number) { setAlerts(prev => prev.filter(a => a.id !== id)) }
+
+  const colors: Record<string, string> = { warn: '#E8A020', err: '#E24B4A', ok: '#4CAF50' }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#343434 transparent' }}>
+      <h1 className="text-[20px] font-semibold text-white text-right mb-5">التنبيهات</h1>
+      {alerts.length === 0 && (
+        <div className="text-center py-20 text-white/25 text-[14px]">لا توجد تنبيهات ✓</div>
+      )}
+      <div className="grid gap-3">
+        {alerts.map(a => (
+          <div key={a.id} className="flex items-center justify-between rounded-xl px-4 py-3.5 border" style={{ background: '#111111', borderColor: `${colors[a.type]}40` }}>
+            <div className="flex items-center gap-2">
+              <button onClick={() => dismiss(a.id)} className="text-[11px] text-white/40 hover:text-err border border-c3 rounded-[7px] px-2.5 py-1 cursor-pointer hover:border-err/40 transition-colors">
+                تجاهل
+              </button>
+              <span className="text-[11px] text-white/35">{a.time}</span>
+            </div>
+            <div className="flex items-center gap-2 text-right">
+              <span className="text-[13px] text-white">{a.msg}</span>
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: colors[a.type] }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Export ──────────────────────────────────────────────
+export default function KitchenView() {
+  const { kitchenSub, setKitchenSub } = useStore()
+
+  return (
+    <div className="flex flex-1 overflow-hidden">
+      {/* Main content */}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        {kitchenSub === 'kds'       && <KdsScreen />}
+        {kitchenSub === 'inventory' && <InventoryScreen />}
+        {kitchenSub === 'alerts'    && <AlertsScreen />}
+      </div>
+
+      {/* Right Sidebar */}
+      <div className="w-[200px] border-r border-c3 flex flex-col py-4 flex-shrink-0" style={{ background: '#0D0D0D' }}>
+        <div className="text-[10px] text-white/30 px-4 mb-3 tracking-widest text-right">المطبخ</div>
+        {SIDEBAR_ITEMS.map(item => (
+          <button
+            key={item.id}
+            onClick={() => setKitchenSub(item.id as any)}
+            className={`w-full text-right px-4 py-2.5 text-[13px] flex items-center justify-between transition-all duration-150 cursor-pointer border-none
+              ${kitchenSub === item.id
+                ? 'bg-gold/10 text-gold font-medium'
+                : 'text-white/60 hover:text-white/90 hover:bg-white/5'}`}
+            style={{
+              background: kitchenSub === item.id ? 'rgba(220,169,92,0.1)' : 'transparent',
+              borderRight: kitchenSub === item.id ? '2px solid #DCA95C' : '2px solid transparent',
+            }}
+          >
+            <span className="flex items-center gap-1.5">
+              {item.badge > 0 && (
+                <span className="w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center bg-err text-white flex-shrink-0">
+                  {item.badge}
+                </span>
+              )}
+            </span>
+            <span className="text-right">{item.label}</span>
+          </button>
+        ))}
       </div>
     </div>
   )

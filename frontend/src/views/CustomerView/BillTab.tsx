@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../../lib/api'
 
-export default function BillTab() {
+export default function BillTab({ table = 'T5' }: { table?: string }) {
   const [billSent, setBillSent]   = useState(false)
   const [noteSent, setNoteSent]   = useState(false)
   const [note, setNote]           = useState('')
@@ -11,7 +11,7 @@ export default function BillTab() {
   async function requestBill() {
     if (loading || billSent) return
     setLoading(true)
-    await api.requestBill('T5')
+    await api.requestBill(table)
     setLoading(false)
     setBillSent(true)
   }
@@ -19,7 +19,7 @@ export default function BillTab() {
   async function sendNote() {
     if (noteLoading || !note.trim()) return
     setNoteLoading(true)
-    await api.sendNote('T5', note)
+    await api.sendNote(table, note)
     setNoteLoading(false)
     setNoteSent(true)
   }

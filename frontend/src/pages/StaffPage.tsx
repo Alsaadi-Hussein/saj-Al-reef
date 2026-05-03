@@ -1,37 +1,89 @@
-import CustomerView from '../views/CustomerView'
-import KitchenView  from '../views/KitchenView'
-import WaiterView   from '../views/WaiterView'
-import AdminView    from '../views/AdminView'
+import AdminView        from '../views/AdminView'
+import KitchenView      from '../views/KitchenView'
+import CustomerView     from '../views/CustomerView'
+import PosView          from '../views/PosView'
+import ReservationsView from '../views/ReservationsView'
 import { useStore } from '../store/useStore'
 
-const NAV = [
-  { id: 'c' as const, label: '📱 الزبون'   },
-  { id: 'k' as const, label: '🍳 المطبخ'   },
-  { id: 'w' as const, label: '👨‍🍽️ النادل' },
-  { id: 'a' as const, label: '📊 الإدارة'  },
+type NavTab = 'admin' | 'customer' | 'kitchen' | 'pos' | 'reservations'
+
+const NAV: { id: NavTab; label: string; badge?: number }[] = [
+  { id: 'admin',        label: 'لوحة الإدارة',  },
+  { id: 'customer',     label: 'تطبيق الزبون'   },
+  { id: 'kitchen',      label: 'المطبخ',        badge: 3 },
+  { id: 'pos',          label: 'POS'             },
+  { id: 'reservations', label: 'الحجوزات'        },
 ]
 
 export default function StaffPage() {
-  const { activeView, setActiveView } = useStore()
+  const { activeTab, setActiveTab } = useStore()
 
   return (
-    <div className="min-h-screen bg-bk" dir="rtl">
-      <div className="flex border-b-2 border-c3">
-        {NAV.map(v => (
-          <button
-            key={v.id}
-            onClick={() => setActiveView(v.id)}
-            className={`flex-1 py-3 px-1.5 text-xs font-medium whitespace-nowrap transition-colors duration-200 font-sans
-              ${activeView === v.id ? 'bg-gold text-black' : 'bg-c2 text-white/60 hover:bg-c3'}`}
-          >
-            {v.label}
+    <div className="h-screen flex flex-col bg-bk overflow-hidden" dir="rtl">
+      {/* ── Top Nav Bar ── */}
+      <header
+        className="flex items-center justify-between border-b border-c3 flex-shrink-0"
+        style={{ background: '#0A0A0A', height: 48, paddingLeft: 16, paddingRight: 16 }}
+      >
+        {/* Left: action buttons */}
+        <div className="flex items-center gap-2">
+          <button className="text-[11px] text-white/50 bg-c2 border border-c3 rounded-[7px] px-2.5 py-1.5 hover:bg-c3 hover:text-white transition-all cursor-pointer">
+            طابع #
           </button>
-        ))}
+          <button className="text-[11px] text-white/50 bg-c2 border border-c3 rounded-[7px] px-2.5 py-1.5 hover:bg-c3 hover:text-white transition-all cursor-pointer">
+            دع
+          </button>
+        </div>
+
+        {/* Center: nav tabs */}
+        <nav className="flex items-stretch h-full">
+          {NAV.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className="relative flex items-center gap-1.5 px-5 text-[13px] font-medium transition-all duration-150 cursor-pointer border-none h-full"
+              style={{
+                background: 'transparent',
+                color: activeTab === t.id ? '#DCA95C' : 'rgba(255,255,255,0.5)',
+                borderBottom: activeTab === t.id ? '2px solid #DCA95C' : '2px solid transparent',
+              }}
+            >
+              {t.label}
+              {t.badge && t.badge > 0 && (
+                <span
+                  className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
+                  style={{ background: '#E24B4A' }}
+                >
+                  {t.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Right: Logo */}
+        <div className="flex items-center gap-2.5">
+          <div className="text-right">
+            <div className="text-[11px] font-medium text-white">ساج الريف</div>
+            <div className="text-[9px] text-white/35">النظام الرقمي</div>
+          </div>
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-black text-[14px] font-bold flex-shrink-0"
+            style={{ background: '#DCA95C' }}
+          >
+            S
+          </div>
+        </div>
+      </header>
+
+      {/* ── Content ── */}
+      <div className="flex-1 overflow-hidden flex">
+        {activeTab === 'admin'        && <AdminView />}
+        {activeTab === 'customer'     && <CustomerView />}
+        {activeTab === 'kitchen'      && <KitchenView />}
+        {activeTab === 'pos'          && <PosView />}
+        {activeTab === 'reservations' && <ReservationsView />}
       </div>
-      {activeView === 'c' && <CustomerView />}
-      {activeView === 'k' && <KitchenView />}
-      {activeView === 'w' && <WaiterView />}
-      {activeView === 'a' && <AdminView />}
     </div>
   )
 }

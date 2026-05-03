@@ -1,0 +1,194 @@
+import { useEffect, useState } from 'react'
+import { api } from '../../lib/api'
+import { useStore } from '../../store/useStore'
+import type { MenuItem } from '../../types/index'
+
+const CATS = [
+  { id: 'all', label: 'الكل'      },
+  { id: 'm',   label: 'ساج'       },
+  { id: 's',   label: 'بيتزا'    },
+  { id: 'd',   label: 'مشروبات'  },
+  { id: 'sw',  label: 'حلويات'   },
+]
+
+const TABLE = 'T5'
+const ORDER_N = '#254'
+const VAT = 0.15
+
+export default function PosView() {
+  const { posCategory, setPosCategory, posCart, setPosCartQty, clearPosCart } = useStore()
+  const [items, setItems]   = useState<MenuItem[]>([])
+  const [paid,  setPaid]    = useState(false)
+  const [printing, setPrinting] = useState(false)
+
+  useEffect(() => { api.getMenu().then(setItems) }, [])
+
+  const visible  = posCategory === 'all' ? items : items.filter(i => i.category === posCategory)
+  const cartItems = Object.values(posCart)
+  const subtotal  = cartItems.reduce((s, c) => s + c.item.price * c.qty, 0)
+  const vatAmt    = Math.round(subtotal * VAT)
+  const total     = subtotal + vatAmt
+
+  async function checkout() {
+    if (cartItems.length === 0) return
+    const itemStr = cartItems.map(c => `${c.item.name}(${c.qty})`).join('، ')
+    await api.placePosOrder(itemStr, TABLE, total)
+    setPaid(true)
+    clearPosCart()
+    setTimeout(() => setPaid(false), 3000)
+  }
+
+  async function print() {
+    setPrinting(true)
+    await new Promise(r => setTimeout(r, 1200))
+    setPrinting(false)
+  }
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      {/* Left: Order panel */}
+      <div
+        className="flex flex-col border-l border-c3"
+        style={{ width: 320, background: '#0D0D0D' }}
+      >
+        {/* Order header */}
+        <div className="px-4 pt-4 pb-3 border-b border-c3">
+          <div className="flex justify-between items-center mb-1">
+            <div className="flex gap-2">
+              <span className="badge badge-ok text-[11px]">مفتوح</span>
+              <span className="badge badge-gold text-[11px]">طاولة 5</span>
+            </div>
+            <span className="text-[14px] font-semibold text-gold">{ORDER_N}</span>
+          </div>
+          <div className="text-[11px] text-white/40 text-right mt-0.5">الطلب الحالي</div>
+        </div>
+
+        {/* Cart area */}
+        <div className="flex-1 overflow-y-auto p-3" style={{ scrollbarWidth: 'thin', scrollbarColor: '#343434 transparent' }}>
+          {cartItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
+              <div className="text-[32px] opacity-20">🍽️</div>
+              <div className="text-[12px] text-white/25">انقر على الوجبة لإضافتها</div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {cartItems.map(c => (
+                <div key={c.item.id} className="flex items-center justify-between rounded-[10px] px-3 py-2.5 border border-c3" style={{ background: '#151515' }}>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setPosCartQty(c.item, -1)} className="w-6 h-6 rounded-full bg-c3 text-white text-sm flex items-center justify-center cursor-pointer hover:bg-c4 border-none">−</button>
+                    <span className="text-[12px] font-medium text-gold min-w-[18px] text-center">{c.qty}</span>
+                    <button onClick={() => setPosCartQty(c.item, 1)} className="w-6 h-6 rounded-full bg-gold text-black text-sm flex items-center justify-center cursor-pointer hover:bg-gold-light border-none">+</button>
+                  </div>
+                  <div className="text-right flex-1 mr-2">
+                    <div className="text-[12px] font-medium text-white">{c.item.name}</div>
+                    <div className="text-[11px] text-gold">{(c.item.price * c.qty).toLocaleString()} د.ع</div>
+                  </div>
+                  <span className="text-[16px]">{c.item.emoji}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Totals + actions */}
+        <div className="border-t border-c3 p-4">
+          <div className="space-y-1.5 mb-4">
+            <div className="flex justify-between text-[12px]">
+              <span className="text-gold">{subtotal.toLocaleString()} د.ع</span>
+              <span className="text-white/50">المجموع الفرعي</span>
+            </div>
+            <div className="flex justify-between text-[12px]">
+              <span className="text-white/50">{vatAmt.toLocaleString()} د.ع</span>
+              <span className="text-white/50">ضريبة القيمة المضافة (15%)</span>
+            </div>
+            <div className="flex justify-between text-[14px] font-semibold pt-1 border-t border-c3">
+              <span className="text-gold">{total.toLocaleString()} د.ع</span>
+              <span className="text-white">الإجمالي</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <button
+              onClick={() => clearPosCart()}
+              className="py-2.5 rounded-[9px] text-[12px] font-medium bg-c2 border border-c3 text-white/70 hover:bg-c3 cursor-pointer transition-all"
+            >
+              مسح
+            </button>
+            <button
+              onClick={print}
+              className="py-2.5 rounded-[9px] text-[12px] font-medium bg-c2 border border-c3 text-white/70 hover:bg-c3 cursor-pointer transition-all"
+            >
+              {printing ? '...' : '🖨 طباعة'}
+            </button>
+          </div>
+
+          <button
+            onClick={checkout}
+            disabled={cartItems.length === 0}
+            className="w-full py-3 rounded-[11px] text-[13px] font-semibold text-black hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:opacity-40"
+            style={{ background: '#DCA95C' }}
+          >
+            {paid ? '✓ تم التحصيل!' : `💳 تحصيل ${total > 0 ? total.toLocaleString() + ' د.ع' : ''}`}
+          </button>
+        </div>
+      </div>
+
+      {/* Right: Menu grid */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="px-5 pt-4 pb-3 border-b border-c3 flex-shrink-0">
+          <div className="flex justify-between items-center mb-3">
+            <div className="text-[12px] text-white/40">ساج الريف - الكاشير</div>
+            <h1 className="text-[20px] font-semibold text-white">POS — نقطة البيع</h1>
+          </div>
+          {/* Category filters */}
+          <div className="flex gap-2">
+            {CATS.map(c => (
+              <button
+                key={c.id}
+                onClick={() => setPosCategory(c.id)}
+                className="px-4 py-1.5 rounded-full text-[12px] font-medium border transition-all cursor-pointer"
+                style={{
+                  background: posCategory === c.id ? '#DCA95C' : 'transparent',
+                  color: posCategory === c.id ? '#000' : 'rgba(255,255,255,0.5)',
+                  borderColor: posCategory === c.id ? '#DCA95C' : '#242424',
+                }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Menu grid */}
+        <div className="flex-1 overflow-y-auto p-4" style={{ scrollbarWidth: 'thin', scrollbarColor: '#343434 transparent' }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            {visible.map(item => {
+              const inCart = posCart[item.id]?.qty ?? 0
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setPosCartQty(item, 1)}
+                  className="rounded-xl p-4 border text-center cursor-pointer transition-all duration-200 hover:border-gold/50 active:scale-95"
+                  style={{
+                    background: inCart > 0 ? 'rgba(220,169,92,0.08)' : '#111111',
+                    borderColor: inCart > 0 ? 'rgba(220,169,92,0.4)' : '#242424',
+                  }}
+                >
+                  <div className="text-[28px] mb-2">{item.emoji}</div>
+                  <div className="text-[12px] font-medium text-white mb-1">{item.name}</div>
+                  <div className="text-[11px] text-gold">{item.price.toLocaleString()} <span className="text-[10px] text-white/40">د.ع</span></div>
+                  {inCart > 0 && (
+                    <div className="mt-1.5 w-5 h-5 rounded-full bg-gold text-black text-[10px] font-bold flex items-center justify-center mx-auto">
+                      {inCart}
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

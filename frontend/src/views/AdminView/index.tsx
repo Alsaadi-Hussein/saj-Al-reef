@@ -1,256 +1,274 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
-import type { Table, Offer, AdminNotification, TopItem, AdminStats } from '../../types'
+import { useStore } from '../../store/useStore'
+import type { Offer, AdminNotification, StockItem } from '../../types/index'
+import MenuMgmt    from './MenuMgmt'
+import OffersMgmt  from './OffersMgmt'
+import SalesView   from './SalesView'
+import ShiftView   from './ShiftView'
 
-type Row = Record<string, unknown>
-
-const EXTRA_OFFERS = [
-  { title: 'عرض المساء',  desc: 'خصم 25% بعد 10 مساءً',      active: true },
-  { title: 'وجبة الطفل', desc: 'وجبة مجانية مع كل وجبتين',  active: true },
+// ─── Admin Sidebar ────────────────────────────────────────────
+const SIDEBAR_ITEMS = [
+  { id: 'dashboard',    label: 'لوحة التحكم',   badge: 0 },
+  { id: 'menu',         label: 'إدارة القائمة', badge: 10 },
+  { id: 'offers',       label: 'العروض',         badge: 0 },
+  { id: 'sales',        label: 'المبيعات',       badge: 0 },
+  { id: 'shift',        label: 'إنهاء الوردية',  badge: 0 },
+  { id: 'reservations', label: 'الحجوزات',       badge: 3 },
 ]
 
-const AI_INSIGHTS = [
-  '💡 "قلّل سعر ساج برايم، الطلب ضعيف هذا الأسبوع"',
-  '📈 "دجاج مشوي ترند اليوم — فعّل عرض خاص الآن"',
-  '⏰ "ذروة الطلبات 7-9 مساءً — جهّز فريق إضافي"',
-]
-
-const TABLE_BG:   Record<string, string> = { g: '#DCA95C', e: '#E24B4A', f: '#242424' }
-const TABLE_TEXT: Record<string, string> = { g: '#000',    e: '#FFF',    f: 'rgba(255,255,255,0.35)' }
-
-export default function AdminView() {
-  const [stats,    setStats]    = useState<AdminStats>({ ordersToday: 127, ordersThisHour: 18, activeTables: 9, totalTables: 15, revenue: 485000, revenueGrowth: 12, rating: 4.8 })
-  const [notifs,   setNotifs]   = useState<AdminNotification[]>([])
-  const [topItems, setTop]      = useState<TopItem[]>([])
-  const [hourly,   setHourly]   = useState<number[]>([])
-  const [tables,   setTables]   = useState<Table[]>([])
-  const [offers,   setOffers]   = useState<Offer[]>([])
-  const [extraIdx, setExtraIdx] = useState(0)
+// ─── Dashboard ────────────────────────────────────────────────
+function AdminDashboard() {
+  const [stats,    setStats]  = useState({ ordersToday: 220, ordersThisHour: 18, revenue: 501100, guests: 50 })
+  const [stock,    setStock]  = useState<StockItem[]>([])
+  const [notifs,   setNotifs] = useState<AdminNotification[]>([])
+  const [weekly,   setWeekly] = useState<{ day: string; val: number }[]>([])
+  const [topItems, setTop]    = useState<{ name: string; count: number; pct: number; color: string }[]>([])
+  const [shiftNum, setShiftNum] = useState(1)
 
   useEffect(() => {
     api.getAdminData().then(d => {
-      setStats(d.stats)
+      setStats({
+        ordersToday: d.stats.ordersToday,
+        ordersThisHour: d.stats.ordersThisHour,
+        revenue: d.stats.revenue,
+        guests: d.stats.activeTables * 5 + 5,
+      })
       setNotifs(d.notifications)
       setTop(d.topItems)
-      setHourly(d.hourlyVols)
+      setWeekly(d.weeklySales)
     })
-    api.getTables().then(setTables)
-    api.getOffers().then(setOffers)
+    api.getStock().then(setStock)
 
-    const channel = supabase
-      .channel('admin-all')
+    const ch = supabase.channel('admin-dash')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
         setStats(s => ({ ...s, ordersToday: s.ordersToday + 1, ordersThisHour: s.ordersThisHour + 1 }))
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload: { new: Row }) => {
-        const r = payload.new
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (p: { new: Record<string, unknown> }) => {
+        const r = p.new
         setNotifs(prev => [
           { table: r.table_ref as string, message: r.message as string, time: r.time as string, color: r.color as string },
           ...prev.slice(0, 9),
         ])
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'restaurant_tables' }, (payload: { new: Row }) => {
-        const r = payload.new
-        setTables(prev => prev.map(t => t.n === (r.n as number) ? { n: r.n as number, s: r.status as 'g' | 'e' | 'f' } : t))
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'offers' }, (payload: { new: Row }) => {
-        const r = payload.new
-        setOffers(prev => prev.map(o => o.id === (r.id as number)
-          ? { id: r.id as number, title: r.title as string, desc: r.description as string, active: r.active as boolean }
-          : o))
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'offers' }, (payload: { new: Row }) => {
-        const r = payload.new
-        setOffers(prev => [...prev, { id: r.id as number, title: r.title as string, desc: r.description as string, active: r.active as boolean }])
-      })
       .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
+    return () => { supabase.removeChannel(ch) }
   }, [])
 
-  async function toggleTable(n: number) {
-    const updated = await api.updateTable(n)
-    setTables(prev => prev.map(t => t.n === n ? updated : t))
-  }
-
-  async function toggleOffer(id: number) {
-    const updated = await api.toggleOffer(id)
-    setOffers(prev => prev.map(o => o.id === id ? updated : o))
-  }
-
-  async function addOffer() {
-    if (extraIdx >= EXTRA_OFFERS.length) return
-    const extra = EXTRA_OFFERS[extraIdx]
-    const created = await api.addOffer(extra.title, extra.desc)
-    setOffers(prev => [...prev, created])
-    setExtraIdx(i => i + 1)
-  }
-
-  const maxVol = Math.max(...hourly, 1)
+  const lowStock = stock.filter(s => s.current < s.minimum)
+  const maxVal   = Math.max(...weekly.map(w => w.val), 1)
 
   return (
-    <div className="p-4 bg-bk">
+    <div className="flex-1 overflow-y-auto p-5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#343434 transparent' }}>
       {/* Header */}
-      <div className="flex justify-between items-center mb-3.5">
-        <div>
-          <div className="text-[15px] font-medium text-white">Admin Power Dashboard</div>
-          <div className="text-[11px] text-white/60 mt-0.5">SAJ AL-REEF | Owner View</div>
+      <div className="flex justify-between items-start mb-5">
+        <div className="text-right">
+          <h1 className="text-[22px] font-semibold text-white">لوحة التحكم الرئيسية</h1>
+          <p className="text-[12px] text-white/45 mt-0.5">ساج الريف - تحديث فوري</p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="relative w-2.5 h-2.5">
-            <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-ok" />
-            <div className="absolute w-2.5 h-2.5 rounded-full bg-ok opacity-20 animate-ping" style={{ animationDuration: '2s' }} />
-          </div>
-          <span className="text-[11px] text-ok">LIVE</span>
+        <div className="flex items-center gap-2">
+          <span className="badge badge-ok text-[11px] flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse inline-block" />
+            مباشر
+          </span>
+          <button
+            onClick={() => setShiftNum(n => n + 1)}
+            className="bg-c3 border border-c4 text-white text-[12px] px-3 py-1.5 rounded-[9px] hover:bg-c4 active:scale-95 transition-all duration-200 cursor-pointer"
+          >
+            إنهاء الوردية {shiftNum}
+          </button>
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-2.5 mb-3.5">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-4 gap-3 mb-4">
         {[
-          { label: 'الطلبات اليوم',   value: stats.ordersToday,                           sub: `▲ ${stats.ordersThisHour} هذه الساعة`, subCl: 'text-ok' },
-          { label: 'الطاولات النشطة', value: `${stats.activeTables}/${stats.totalTables}`, sub: `${Math.round(stats.activeTables / stats.totalTables * 100)}% مشغولة`, subCl: 'text-white/60' },
-          { label: 'الإيراد اليوم',   value: `${(stats.revenue / 1000).toFixed(0)}K`,     sub: `د.ع ▲ ${stats.revenueGrowth}%`, subCl: 'text-ok' },
-          { label: 'متوسط التقييم',   value: `${stats.rating} ★`,                         sub: 'من 5 نجوم', subCl: 'text-white/60' },
+          { label: 'الطلبات النشطة', value: stats.ordersThisHour, sub: `3 من ساعة ماضت`, subCl: 'text-white/40' },
+          { label: 'الطلبات اليوم',  value: stats.ordersToday,    sub: `▲ 12% من أمس`,   subCl: 'text-ok' },
+          { label: 'المبيعات اليوم', value: `${stats.revenue.toLocaleString()} د.ع`, sub: 'الجمعة', subCl: 'text-white/40' },
+          { label: 'عدد الزبائن',   value: stats.guests,          sub: 'الإشغال الحالي', subCl: 'text-white/40' },
         ].map((c, i) => (
-          <div key={i} className="bg-c2 border border-c3 rounded-xl p-3.5">
-            <div className="text-[11px] text-white/60 mb-1">{c.label}</div>
-            <div className="text-2xl font-medium text-gold">{c.value}</div>
-            <div className={`text-[11px] mt-1 ${c.subCl}`}>{c.sub}</div>
+          <div key={i} className="rounded-xl p-4 border border-c3" style={{ background: '#111111' }}>
+            <div className="text-[11px] text-white/50 mb-1.5 text-right">{c.label}</div>
+            <div className="text-[24px] font-semibold text-gold text-right">{c.value}</div>
+            <div className={`text-[11px] mt-1 text-right ${c.subCl}`}>{c.sub}</div>
           </div>
         ))}
       </div>
 
-      {/* AI Insights + Live Notifications */}
-      <div className="grid grid-cols-2 gap-3.5 mb-3.5">
-        <div className="rounded-[13px] p-3.5" style={{ background: 'linear-gradient(145deg,#1A1200,#0D0D0D)', border: '1px solid #B8892A' }}>
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-[15px]">🧠</span>
-            <span className="text-[13px] font-medium text-gold">AI Insights</span>
-            <span className="badge badge-gold mr-auto text-[10px]">مباشر</span>
+      {/* Stock Alerts */}
+      {lowStock.length > 0 && (
+        <div className="mb-4">
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="text-warn text-[13px]">▲</span>
+            <span className="text-[13px] font-medium text-warn">تنبيهات المخزن</span>
           </div>
-          {AI_INSIGHTS.map((ins, i) => (
-            <div key={i} className="rounded-[9px] p-2.5 mb-2" style={{ background: 'rgba(220,169,92,0.08)', border: '1px solid rgba(220,169,92,0.18)' }}>
-              <div className="text-[11px] text-gold-light leading-relaxed">{ins}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="bg-c1 border border-c3 rounded-[13px] p-3.5">
-          <div className="flex justify-between items-center mb-3">
-            <div className="text-[13px] font-medium text-white">🔔 إشعارات مباشرة</div>
-            <span className="badge badge-err">{notifs.length} جديد</span>
+          <div className="grid gap-2.5">
+            {lowStock.map((s, i) => (
+              <div key={i} className="flex items-center justify-between rounded-xl px-4 py-3 border border-warn/20" style={{ background: 'rgba(232,160,32,0.06)' }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-warn text-[16px]">⚠</span>
+                  <div className="text-right">
+                    <span className="text-[13px] font-medium text-white">{s.name}</span>
+                    <span className="text-[13px] text-white"> — المخزون منخفض!</span>
+                    <div className="text-[11px] text-white/45 mt-0.5">
+                      المتوفر {s.current} {s.unit} · الحد الأدنى: {s.minimum} {s.unit}
+                    </div>
+                  </div>
+                </div>
+                <span className="badge badge-warn text-[11px]">منخفض</span>
+              </div>
+            ))}
           </div>
-          {notifs.slice(0, 6).map((n, i) => (
-            <div key={i} className="pb-2 mb-2 pr-3 animate-slide-left" style={{ borderRight: `2.5px solid ${n.color}`, animationDelay: `${i * 0.09}s` }}>
-              <div className="flex justify-between">
-                <div>
-                  <div className="text-[12px] font-medium text-white">طاولة {n.table}</div>
-                  <div className="text-[11px] text-white/45 mt-0.5">{n.message}</div>
-                </div>
-                <span className="text-[10px] text-white/30">{n.time}</span>
-              </div>
-            </div>
-          ))}
         </div>
-      </div>
+      )}
 
-      {/* Top items + Hourly chart */}
-      <div className="grid grid-cols-2 gap-3.5 mb-3.5">
-        <div className="bg-c1 border border-c3 rounded-[13px] p-3.5">
-          <div className="text-[13px] font-medium text-white mb-3.5">📊 الأكثر طلباً + حجم الطلبات بالساعة</div>
-          {topItems.map((t, i) => (
-            <div key={i} className="mb-3">
-              <div className="flex justify-between mb-1.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-white/35 min-w-[14px]">{i + 1}</span>
-                  <span className="text-[12px] font-medium text-white">{t.name}</span>
-                </div>
-                <span className="text-[12px] font-medium" style={{ color: t.color }}>{t.count} طلب</span>
-              </div>
-              <div className="h-[5px] rounded bg-c3">
-                <div className="h-[5px] rounded" style={{ background: t.color, width: `${t.pct}%` }} />
-              </div>
-            </div>
-          ))}
-
-          <div className="text-[11px] text-white/60 mt-3.5 mb-2">حجم الطلبات بالساعة</div>
-          <div className="flex items-end gap-0.5 h-[58px]">
-            {hourly.map((v, i) => {
-              const hp  = Math.round((v / maxVol) * 56)
-              const col = v > 50 ? '#DCA95C' : v > 30 ? '#B8892A' : v > 15 ? '#6A4D1A' : '#2A2A2A'
+      {/* Charts Row */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        {/* Weekly Sales Bar Chart */}
+        <div className="rounded-xl p-4 border border-c3" style={{ background: '#111111' }}>
+          <div className="flex justify-between items-center mb-4 text-right">
+            <button className="text-[11px] text-gold hover:text-gold-light transition-colors">عرض التقرير ←</button>
+            <span className="text-[13px] font-medium text-white">مبيعات الأسبوع</span>
+          </div>
+          <div className="flex items-end gap-2 h-[110px]">
+            {weekly.map((w, i) => {
+              const hp = Math.round((w.val / maxVal) * 100)
               return (
-                <div key={i} className="flex-1 flex items-end">
-                  <div className="w-full rounded-t-sm" style={{ height: hp, background: col }} />
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-[9px] text-gold font-medium">{w.val}م</span>
+                  <div className="w-full rounded-t-[4px] bg-gold" style={{ height: `${hp}%`, minHeight: 8 }} />
+                  <span className="text-[9px] text-white/40 text-center leading-tight">{w.day.slice(0, 3)}</span>
                 </div>
               )
             })}
           </div>
-          <div className="flex justify-between text-[10px] text-c4 mt-1">
-            {['12م','3م','6م','9م','12ص','3ص','6ص','9ص'].map(l => <span key={l}>{l}</span>)}
-          </div>
         </div>
 
-        {/* Table map */}
-        <div className="bg-c1 border border-c3 rounded-[13px] p-3.5">
-          <div className="text-[13px] font-medium text-white mb-3">🗺️ خريطة الطاولات — اضغط لتغيير الحالة</div>
-          <div className="grid gap-1.5 mb-3" style={{ gridTemplateColumns: 'repeat(5,1fr)' }}>
-            {tables.map(t => (
-              <div
-                key={t.n}
-                onClick={() => toggleTable(t.n)}
-                className="py-2 px-0.5 rounded-[8px] text-center text-[11px] font-medium cursor-pointer transition-opacity duration-200 hover:opacity-80 active:scale-95"
-                style={{ background: TABLE_BG[t.s], color: TABLE_TEXT[t.s] }}
-              >
-                {t.n}
-              </div>
-            ))}
+        {/* AI Section */}
+        <div className="rounded-xl p-4 border border-gold/25" style={{ background: 'linear-gradient(145deg,#1A1200,#0D0D0D)' }}>
+          <div className="flex justify-between items-center mb-3 text-right">
+            <span className="badge badge-gold text-[10px]">توصيات ذرية</span>
+            <span className="text-[13px] font-medium text-gold">ذكاء اصطناعي</span>
           </div>
-          <div className="flex gap-2.5 flex-wrap">
-            {[{ s: 'f', label: 'فارغ' }, { s: 'g', label: 'مشغول' }, { s: 'e', label: 'طلب حساب' }].map(({ s, label }) => (
-              <div key={s} className="flex items-center gap-1.5 text-[11px] text-white/60">
-                <span className="w-2.5 h-2.5 rounded-[3px] inline-block" style={{ background: TABLE_BG[s] }} />
-                {label}
+          <div className="space-y-2.5">
+            {[
+              { icon: '✓', color: 'text-ok',   text: '"حقّص سعر الستيك: الطلب منخفض"' },
+              { icon: '▸', color: 'text-gold',  text: '"البيتزا تتزيد اليوم"' },
+              { icon: '△', color: 'text-warn',  text: '"الطاولة 7 تنتظر 22 دقيقة"' },
+            ].map((ins, i) => (
+              <div key={i} className="flex items-start gap-2.5 rounded-[9px] p-2.5" style={{ background: 'rgba(220,169,92,0.08)', border: '1px solid rgba(220,169,92,0.12)' }}>
+                <span className={`text-[13px] font-bold flex-shrink-0 ${ins.color}`}>{ins.icon}</span>
+                <span className="text-[11px] text-gold-light leading-relaxed text-right">{ins.text}</span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Offers */}
-      <div className="bg-c1 border border-c3 rounded-[13px] p-3.5">
-        <div className="flex justify-between items-center mb-3">
-          <div className="text-[13px] font-medium text-white">🎯 إدارة العروض</div>
-          <button
-            onClick={addOffer}
-            disabled={extraIdx >= EXTRA_OFFERS.length}
-            className="py-1.5 px-3 rounded-[9px] text-[11px] font-medium bg-gold text-black hover:bg-gold-light active:scale-95 transition-all duration-200 disabled:opacity-50"
-          >
-            + إضافة عرض
-          </button>
-        </div>
-        <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(165px,1fr))' }}>
-          {offers.map((o, i) => (
-            <div
-              key={o.id}
-              className="rounded-xl p-3.5 animate-slide-up"
-              style={{ background: '#1A1A1A', border: `1px solid ${o.active ? 'rgba(220,169,92,0.4)' : '#242424'}`, animationDelay: `${i * 0.08}s` }}
-            >
-              <div className="flex justify-between items-center mb-1.5">
-                <div className={`text-[12px] font-medium ${o.active ? 'text-gold' : 'text-white/50'}`}>{o.title}</div>
-                <div
-                  onClick={() => toggleOffer(o.id)}
-                  className="relative w-9 h-5 rounded-full cursor-pointer transition-colors duration-300 flex-shrink-0"
-                  style={{ background: o.active ? '#DCA95C' : '#343434' }}
-                >
-                  <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-300" style={{ left: o.active ? '18px' : '2px' }} />
-                </div>
+      {/* Live Feed + Analytics */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* Live Feed */}
+        <div className="rounded-xl p-4 border border-c3" style={{ background: '#111111' }}>
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-[11px] text-white/40">الكل</span>
+            <span className="text-[13px] font-medium text-white">التغذية الراجعة</span>
+          </div>
+          <div className="space-y-3">
+            {notifs.slice(0, 5).map((n, i) => (
+              <div key={i} className="flex items-center gap-2.5">
+                <span className="text-[11px] text-white/35 flex-shrink-0">{n.time} م</span>
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: n.color }} />
+                <span className="text-[12px] text-white/75 text-right flex-1">{n.message} — طاولة {n.table}</span>
               </div>
-              <div className="text-[11px] text-white/45">{o.desc}</div>
-            </div>
-          ))}
+            ))}
+            {notifs.length === 0 && (
+              <div className="text-center py-4 text-white/25 text-[12px]">لا يوجد إشعارات بعد</div>
+            )}
+          </div>
         </div>
+
+        {/* Analytics Donut */}
+        <div className="rounded-xl p-4 border border-c3" style={{ background: '#111111' }}>
+          <div className="text-[13px] font-medium text-white text-right mb-3">تحليلات</div>
+          <div className="flex items-center justify-between gap-4">
+            {/* SVG Donut */}
+            <div className="relative w-[90px] h-[90px] flex-shrink-0">
+              <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#2A2A2A" strokeWidth="4" />
+                {topItems.reduce<{ offset: number; els: JSX.Element[] }>((acc, t, i) => {
+                  const circ = 2 * Math.PI * 14
+                  const dash = (t.pct / 100) * circ
+                  const el = (
+                    <circle key={i} cx="18" cy="18" r="14" fill="none" stroke={t.color}
+                      strokeWidth="4" strokeDasharray={`${dash} ${circ - dash}`}
+                      strokeDashoffset={-acc.offset} strokeLinecap="round" />
+                  )
+                  return { offset: acc.offset + dash, els: [...acc.els, el] }
+                }, { offset: 0, els: [] }).els}
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[18px] font-semibold text-gold">100</span>
+                <span className="text-[9px] text-white/45">طلب</span>
+              </div>
+            </div>
+            {/* Legend */}
+            <div className="flex-1 space-y-2">
+              {topItems.map((t, i) => (
+                <div key={i} className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-white/60">{t.pct}%</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-white/80">{t.name}</span>
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: t.color }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Export ──────────────────────────────────────────────
+export default function AdminView() {
+  const { adminSub, setAdminSub } = useStore()
+
+  return (
+    <div className="flex flex-1 overflow-hidden">
+      {/* Main content */}
+      <div className="flex-1 overflow-hidden flex flex-col">
+        {adminSub === 'dashboard'    && <AdminDashboard />}
+        {adminSub === 'menu'         && <MenuMgmt />}
+        {adminSub === 'offers'       && <OffersMgmt />}
+        {adminSub === 'sales'        && <SalesView />}
+        {adminSub === 'shift'        && <ShiftView />}
+        {adminSub === 'reservations' && <AdminDashboard />}
+      </div>
+
+      {/* Right Sidebar */}
+      <div className="w-[200px] border-r border-c3 flex flex-col py-4 flex-shrink-0" style={{ background: '#0D0D0D' }}>
+        <div className="text-[10px] text-white/30 px-4 mb-3 tracking-widest text-right">الرئيسية</div>
+        {SIDEBAR_ITEMS.map(item => (
+          <button
+            key={item.id}
+            onClick={() => setAdminSub(item.id as any)}
+            className={`w-full text-right px-4 py-2.5 text-[13px] flex items-center justify-between transition-all duration-150 cursor-pointer border-none
+              ${adminSub === item.id
+                ? 'bg-gold/10 text-gold font-medium border-r-2 border-gold'
+                : 'text-white/60 hover:text-white/90 hover:bg-white/5'}`}
+            style={{ background: adminSub === item.id ? 'rgba(220,169,92,0.1)' : 'transparent' }}
+          >
+            <span className="text-right">{item.label}</span>
+            {item.badge > 0 && (
+              <span className="w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center bg-err text-white flex-shrink-0">
+                {item.badge}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
     </div>
   )

@@ -19,6 +19,7 @@ export interface KitchenOrder {
   items: string
   time: string
   status: 'new' | 'ready'
+  createdAt?: string
 }
 
 export interface Alert {
@@ -35,6 +36,9 @@ export interface Reservation {
   table: string
   name: string
   confirmed: boolean
+  guests?: number
+  phone?: string
+  notes?: string
 }
 
 export interface QueueItem {
@@ -79,4 +83,12 @@ export interface AdminStats {
   revenue: number
   revenueGrowth: number
   rating: number
+}
+
+export interface StockItem {
+  id: number
+  name: string
+  current: number
+  minimum: number
+  unit: string
 }

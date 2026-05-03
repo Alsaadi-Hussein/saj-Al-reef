@@ -1,19 +1,24 @@
 import { supabase } from './supabase'
-import type { MenuItem, KitchenOrder, Alert, Reservation, QueueItem, Table, Offer, AdminNotification } from '../types'
+import type { MenuItem, KitchenOrder, Alert, Reservation, QueueItem, Table, Offer, AdminNotification, StockItem } from '../types/index'
 
-// ─── Row mappers (DB columns → app types) ───────────────────
+// ─── Row mappers ─────────────────────────────────────────────
 const mapMenuItem = (r: any): MenuItem => ({ id: r.id, name: r.name, desc: r.description, price: r.price, category: r.category, emoji: r.emoji, hot: r.hot ?? false })
-const mapOrder    = (r: any): KitchenOrder => ({ id: r.id, table: r.table_ref, items: r.items, time: r.time, status: r.status })
+const mapOrder    = (r: any): KitchenOrder => ({ id: r.id, table: r.table_ref, items: r.items, time: r.time, status: r.status, createdAt: r.created_at })
 export const mapAlert = (r: any): Alert => ({ id: r.id, table: r.table_ref, type: r.type, emoji: r.emoji, time: r.time })
 export const mapTable = (r: any): Table => ({ n: r.n, s: r.status })
 export const mapOffer = (r: any): Offer => ({ id: r.id, title: r.title, desc: r.description, active: r.active })
 const mapNotif    = (r: any): AdminNotification => ({ table: r.table_ref, message: r.message, time: r.time, color: r.color })
-const mapResv     = (r: any): Reservation => ({ id: r.id, time: r.time, table: r.table_ref, name: r.name, confirmed: r.confirmed })
+const mapResv     = (r: any): Reservation => ({ id: r.id, time: r.time, table: r.table_ref, name: r.name, confirmed: r.confirmed, guests: r.guests ?? 2, phone: r.phone ?? '', notes: r.notes ?? '' })
 const mapQueue    = (r: any): QueueItem => ({ id: r.id, table: r.table_ref, items: r.items, waiter: r.waiter, status: r.status })
 
 function nowStr(): string {
   const d = new Date()
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function minutesAgo(createdAt: string | undefined): number {
+  if (!createdAt) return 0
+  return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
 }
 
 // ─── API ─────────────────────────────────────────────────────
@@ -37,7 +42,6 @@ export const api = {
       .insert({ id, table_ref: table, items, time: nowStr(), status: 'new' })
       .select().single()
     if (error) throw error
-    // Notification is broadcast automatically via Realtime when inserted
     await supabase.from('notifications').insert({ table_ref: table.replace('T', ''), message: `طلب جديد ${id}`, time: 'الآن', color: '#DCA95C' })
     return mapOrder(data)
   },
@@ -47,6 +51,8 @@ export const api = {
     if (error) throw error
     return mapOrder(data)
   },
+
+  getOrderMinutesAgo: (order: KitchenOrder): number => minutesAgo(order.createdAt),
 
   // Alerts
   getAlerts: async (): Promise<Alert[]> => {
@@ -72,6 +78,22 @@ export const api = {
   getReservations: async (): Promise<Reservation[]> => {
     const { data } = await supabase.from('reservations').select('*').order('time')
     return (data ?? []).map(mapResv)
+  },
+
+  createReservation: async (r: { firstName: string; lastName: string; phone: string; date: string; time: string; guests: number; section: string; notes: string }): Promise<Reservation> => {
+    const name = `${r.firstName} ${r.lastName}`.trim()
+    const tableN = Math.floor(Math.random() * 12) + 1
+    const { data, error } = await supabase
+      .from('reservations')
+      .insert({ name, table_ref: `T${tableN}`, time: r.time, confirmed: true, guests: r.guests, phone: r.phone, notes: r.notes })
+      .select().single()
+    if (error) throw error
+    await supabase.from('notifications').insert({ table_ref: String(tableN), message: `حجز مؤكد — ${name}`, time: 'الآن', color: '#4CAF50' })
+    return mapResv(data)
+  },
+
+  cancelReservation: async (id: number): Promise<void> => {
+    await supabase.from('reservations').delete().eq('id', id)
   },
 
   getQueue: async (): Promise<QueueItem[]> => {
@@ -113,6 +135,10 @@ export const api = {
     return mapOffer(data)
   },
 
+  deleteOffer: async (id: number): Promise<void> => {
+    await supabase.from('offers').delete().eq('id', id)
+  },
+
   // Bill request
   requestBill: async (table: string): Promise<void> => {
     const n = parseInt(table.replace('T', ''))
@@ -130,25 +156,67 @@ export const api = {
     await supabase.from('notifications').insert({ table_ref: '5', message: `تقييم ${'★'.repeat(overall)}`, time: 'الآن', color: '#4CAF50' })
   },
 
+  // Stock (fallback to static if no table exists)
+  getStock: async (): Promise<StockItem[]> => {
+    try {
+      const { data, error } = await supabase.from('stock').select('*').order('id')
+      if (error || !data || data.length === 0) throw new Error('no data')
+      return data.map((r: any) => ({ id: r.id, name: r.name, current: r.current, minimum: r.minimum, unit: r.unit }))
+    } catch {
+      return [
+        { id: 1, name: 'جبنة موزاريلا', current: 3.5, minimum: 4,  unit: 'كغ' },
+        { id: 2, name: 'زيت زيتون',     current: 1.5, minimum: 5,  unit: 'لتر' },
+        { id: 3, name: 'جبن كريمي',     current: 2,   minimum: 3,  unit: 'كغ' },
+        { id: 4, name: 'دقيق',           current: 12,  minimum: 10, unit: 'كغ' },
+        { id: 5, name: 'طماطم',          current: 8,   minimum: 5,  unit: 'كغ' },
+        { id: 6, name: 'لحم بقري',       current: 5,   minimum: 4,  unit: 'كغ' },
+      ]
+    }
+  },
+
   // Admin bundle
   getAdminData: async () => {
     const { data: notifData } = await supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(10)
+    const { data: ordersData } = await supabase.from('orders').select('id, created_at').order('created_at', { ascending: false })
+    const today = ordersData?.length ?? 127
+    const thisHour = ordersData?.filter((o: any) => {
+      const d = new Date(o.created_at)
+      return (Date.now() - d.getTime()) < 3600000
+    }).length ?? 18
     return {
-      stats:        { ordersToday: 127, ordersThisHour: 18, activeTables: 9, totalTables: 15, revenue: 485000, revenueGrowth: 12, rating: 4.8 },
+      stats: {
+        ordersToday: today,
+        ordersThisHour: thisHour,
+        activeTables: 9,
+        totalTables: 15,
+        revenue: 501100,
+        revenueGrowth: 12,
+        rating: 4.8,
+      },
       notifications: (notifData ?? []).map(mapNotif),
       topItems: [
-        { name: 'ساج برايم',   count: 89, pct: 89, color: '#DCA95C' },
-        { name: 'بيتزا الريف', count: 72, pct: 72, color: '#4CAF50' },
-        { name: 'دجاج مشوي',  count: 55, pct: 55, color: '#378ADD' },
-        { name: 'حمص',         count: 41, pct: 41, color: '#E8A020' },
-        { name: 'بقلاوة',      count: 28, pct: 28, color: '#BF7A54' },
+        { name: 'ساج',         count: 42, pct: 42, color: '#DCA95C' },
+        { name: 'بيتزا',       count: 28, pct: 28, color: '#4CAF50' },
+        { name: 'موك',         count: 18, pct: 18, color: '#378ADD' },
+        { name: 'أخرى',        count: 12, pct: 12, color: '#E8A020' },
       ],
-      hourlyVols:  [2,1,3,7,20,38,55,60,48,62,45,28,18,12,8,5,3,2,5,18,42,58,62,38],
-      aiInsights:  [
-        '💡 "قلّل سعر ساج برايم، الطلب ضعيف هذا الأسبوع"',
-        '📈 "دجاج مشوي ترند اليوم — فعّل عرض خاص الآن"',
-        '⏰ "ذروة الطلبات 7-9 مساءً — جهّز فريق إضافي"',
+      hourlyVols: [2, 1, 3, 7, 20, 38, 55, 60, 48, 62, 45, 28, 18, 12, 8, 5, 3, 2, 5, 18, 42, 58, 62, 38],
+      weeklySales: [
+        { day: 'السبت',  val: 2.8 },
+        { day: 'الجمعة', val: 3.2 },
+        { day: 'الخميس', val: 2.4 },
+        { day: 'الأربعاء', val: 3.6 },
+        { day: 'الثلاثاء', val: 3.1 },
+        { day: 'الاثنين', val: 4.2 },
+        { day: 'الأحد',  val: 4.1 },
       ],
     }
+  },
+
+  // POS order
+  placePosOrder: async (items: string, table: string, total: number): Promise<void> => {
+    const id = `#${Date.now().toString().slice(-5)}`
+    await supabase.from('orders').insert({ id, table_ref: table, items, time: nowStr(), status: 'new' })
+    await supabase.from('notifications').insert({ table_ref: table.replace('T', ''), message: `POS طلب ${id} — ${total.toLocaleString()} د.ع`, time: 'الآن', color: '#DCA95C' })
   },
 }

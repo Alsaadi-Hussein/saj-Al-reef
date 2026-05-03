@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../../store/useStore'
 import { api } from '../../lib/api'
 
-export default function CartTab() {
+export default function CartTab({ table = 'T5' }: { table?: string }) {
   const { cart, setCartQty, clearCart } = useStore()
   const [sent, setSent]     = useState(false)
   const [loading, setLoading] = useState(false)
@@ -15,7 +15,7 @@ export default function CartTab() {
     if (loading || sent) return
     setLoading(true)
     const itemStr = items.map(c => `${c.item.name} (${c.qty})`).join('، ')
-    await api.placeOrder(itemStr, 'T5')
+    await api.placeOrder(itemStr, table)
     setLoading(false)
     setSent(true)
     clearCart()
