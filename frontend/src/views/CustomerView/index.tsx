@@ -72,8 +72,8 @@ export default function CustomerView() {
           </div>
         </div>
 
-        <div className="text-center mt-2.5 text-[11px] text-white/30">
-          جرّب جميع التبويبات • المنيو → سلتي → الحساب → تقييم
+        <div className="text-center mt-3 text-[10px] text-white/20 tracking-wide font-sans">
+          اطلب • تتبع • قيّم
         </div>
       </div>
     </div>
