@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../store/useStore'
-import type { KitchenOrder, StockItem } from '../../types/index'
+import type { KitchenOrder, StockItem, Alert } from '../../types/index'
 
 // ─── Kitchen Sidebar ──────────────────────────────────────────
 const SIDEBAR_ITEMS = [
@@ -176,34 +176,52 @@ function InventoryScreen() {
 
 // ─── Alerts Screen ────────────────────────────────────────────
 function AlertsScreen() {
-  const [alerts, setAlerts] = useState<{ id: number; msg: string; type: 'warn' | 'err' | 'ok'; time: string }[]>([
-    { id: 1, msg: 'الطاولة 7 تنتظر 22 دقيقة', type: 'err',  time: '7:35 م' },
-    { id: 2, msg: 'مخزون الجبنة منخفض',         type: 'warn', time: '7:20 م' },
-    { id: 3, msg: 'البيتزا جاهزة للتقديم',       type: 'ok',   time: '7:10 م' },
-  ])
+  const [alerts, setAlerts] = useState<Alert[]>([])
 
-  function dismiss(id: number) { setAlerts(prev => prev.filter(a => a.id !== id)) }
+  useEffect(() => {
+    api.getAlerts().then(setAlerts)
 
-  const colors: Record<string, string> = { warn: '#E8A020', err: '#E24B4A', ok: '#4CAF50' }
+    const ch = supabase.channel('kitchen-alerts')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alerts' }, (p: any) => {
+        const r = p.new
+        setAlerts(prev => [{ id: r.id, table: r.table_ref, type: r.type, emoji: r.emoji, time: r.time }, ...prev])
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [])
+
+  async function dismiss(id: number) {
+    await api.dismissAlert(id)
+    setAlerts(prev => prev.filter(a => a.id !== id))
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#343434 transparent' }}>
-      <h1 className="text-[20px] font-semibold text-white text-right mb-5">التنبيهات</h1>
+      <div className="flex justify-between items-center mb-5">
+        <span className="text-[12px] text-white/40">{alerts.length} تنبيه</span>
+        <h1 className="text-[20px] font-semibold text-white">التنبيهات</h1>
+      </div>
       {alerts.length === 0 && (
         <div className="text-center py-20 text-white/25 text-[14px]">لا توجد تنبيهات ✓</div>
       )}
       <div className="grid gap-3">
         {alerts.map(a => (
-          <div key={a.id} className="flex items-center justify-between rounded-xl px-4 py-3.5 border" style={{ background: '#111111', borderColor: `${colors[a.type]}40` }}>
+          <div key={a.id} className="flex items-center justify-between rounded-xl px-4 py-3.5 border border-gold/25" style={{ background: '#111111' }}>
             <div className="flex items-center gap-2">
-              <button onClick={() => dismiss(a.id)} className="text-[11px] text-white/40 hover:text-err border border-c3 rounded-[7px] px-2.5 py-1 cursor-pointer hover:border-err/40 transition-colors">
+              <button
+                onClick={() => dismiss(a.id)}
+                className="text-[11px] text-white/40 hover:text-err border border-c3 rounded-[7px] px-2.5 py-1 cursor-pointer hover:border-err/40 transition-colors"
+              >
                 تجاهل
               </button>
               <span className="text-[11px] text-white/35">{a.time}</span>
             </div>
             <div className="flex items-center gap-2 text-right">
-              <span className="text-[13px] text-white">{a.msg}</span>
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: colors[a.type] }} />
+              <div>
+                <span className="text-[13px] text-white">{a.type}</span>
+                <span className="text-[11px] text-white/40 mr-2">طاولة {a.table}</span>
+              </div>
+              <span className="text-[20px]">{a.emoji}</span>
             </div>
           </div>
         ))}

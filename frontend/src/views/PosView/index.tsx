@@ -15,19 +15,27 @@ const TABLE = 'T5'
 const ORDER_N = '#254'
 const VAT = 0.15
 
+type PayMethod = 'cash' | 'card'
+
 export default function PosView() {
   const { posCategory, setPosCategory, posCart, setPosCartQty, clearPosCart } = useStore()
-  const [items, setItems]   = useState<MenuItem[]>([])
-  const [paid,  setPaid]    = useState(false)
-  const [printing, setPrinting] = useState(false)
+  const [items,     setItems]     = useState<MenuItem[]>([])
+  const [paid,      setPaid]      = useState(false)
+  const [printing,  setPrinting]  = useState(false)
+  const [discount,  setDiscount]  = useState('')
+  const [discType,  setDiscType]  = useState<'pct' | 'fixed'>('pct')
+  const [payMethod, setPayMethod] = useState<PayMethod>('cash')
 
   useEffect(() => { api.getMenu().then(setItems) }, [])
 
-  const visible  = posCategory === 'all' ? items : items.filter(i => i.category === posCategory)
+  const visible   = posCategory === 'all' ? items : items.filter(i => i.category === posCategory)
   const cartItems = Object.values(posCart)
   const subtotal  = cartItems.reduce((s, c) => s + c.item.price * c.qty, 0)
-  const vatAmt    = Math.round(subtotal * VAT)
-  const total     = subtotal + vatAmt
+  const discNum   = parseFloat(discount) || 0
+  const discAmt   = discType === 'pct' ? Math.round(subtotal * discNum / 100) : Math.min(discNum, subtotal)
+  const afterDisc = subtotal - discAmt
+  const vatAmt    = Math.round(afterDisc * VAT)
+  const total     = afterDisc + vatAmt
 
   async function checkout() {
     if (cartItems.length === 0) return
@@ -35,6 +43,7 @@ export default function PosView() {
     await api.placePosOrder(itemStr, TABLE, total)
     setPaid(true)
     clearPosCart()
+    setDiscount('')
     setTimeout(() => setPaid(false), 3000)
   }
 
@@ -92,14 +101,35 @@ export default function PosView() {
 
         {/* Totals + actions */}
         <div className="border-t border-c3 p-4">
-          <div className="space-y-1.5 mb-4">
+          {/* Discount row */}
+          <div className="flex gap-1.5 mb-3">
+            <button
+              onClick={() => setDiscType(t => t === 'pct' ? 'fixed' : 'pct')}
+              className="text-[11px] px-2.5 py-1.5 rounded-[7px] border border-c3 text-gold/70 hover:border-gold/40 cursor-pointer transition-all flex-shrink-0"
+            >
+              {discType === 'pct' ? '%' : 'IQD'}
+            </button>
+            <input
+              type="number" min={0} value={discount} onChange={e => setDiscount(e.target.value)}
+              placeholder={discType === 'pct' ? 'خصم %' : 'خصم د.ع'}
+              className="flex-1 bg-c2 border border-c3 rounded-[7px] px-2.5 py-1.5 text-[12px] text-white focus:outline-none focus:border-gold/50 text-right"
+            />
+          </div>
+
+          <div className="space-y-1.5 mb-3">
             <div className="flex justify-between text-[12px]">
-              <span className="text-gold">{subtotal.toLocaleString()} د.ع</span>
+              <span className="text-white/50">{subtotal.toLocaleString()} د.ع</span>
               <span className="text-white/50">المجموع الفرعي</span>
             </div>
+            {discAmt > 0 && (
+              <div className="flex justify-between text-[12px]">
+                <span className="text-ok">- {discAmt.toLocaleString()} د.ع</span>
+                <span className="text-white/50">الخصم</span>
+              </div>
+            )}
             <div className="flex justify-between text-[12px]">
               <span className="text-white/50">{vatAmt.toLocaleString()} د.ع</span>
-              <span className="text-white/50">ضريبة القيمة المضافة (15%)</span>
+              <span className="text-white/50">ضريبة (15%)</span>
             </div>
             <div className="flex justify-between text-[14px] font-semibold pt-1 border-t border-c3">
               <span className="text-gold">{total.toLocaleString()} د.ع</span>
@@ -107,9 +137,27 @@ export default function PosView() {
             </div>
           </div>
 
+          {/* Payment method */}
+          <div className="flex gap-2 mb-3">
+            {(['cash', 'card'] as PayMethod[]).map(m => (
+              <button
+                key={m}
+                onClick={() => setPayMethod(m)}
+                className="flex-1 py-2 rounded-[9px] text-[12px] font-medium cursor-pointer transition-all border"
+                style={{
+                  background: payMethod === m ? (m === 'cash' ? 'rgba(76,175,80,0.15)' : 'rgba(56,120,240,0.15)') : 'transparent',
+                  borderColor: payMethod === m ? (m === 'cash' ? '#4CAF50' : '#378ADD') : '#242424',
+                  color: payMethod === m ? (m === 'cash' ? '#4CAF50' : '#378ADD') : 'rgba(255,255,255,0.5)',
+                }}
+              >
+                {m === 'cash' ? '💵 نقد' : '💳 بطاقة'}
+              </button>
+            ))}
+          </div>
+
           <div className="grid grid-cols-2 gap-2 mb-2">
             <button
-              onClick={() => clearPosCart()}
+              onClick={() => { clearPosCart(); setDiscount('') }}
               className="py-2.5 rounded-[9px] text-[12px] font-medium bg-c2 border border-c3 text-white/70 hover:bg-c3 cursor-pointer transition-all"
             >
               مسح
@@ -128,7 +176,7 @@ export default function PosView() {
             className="w-full py-3 rounded-[11px] text-[13px] font-semibold text-black hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:opacity-40"
             style={{ background: '#DCA95C' }}
           >
-            {paid ? '✓ تم التحصيل!' : `💳 تحصيل ${total > 0 ? total.toLocaleString() + ' د.ع' : ''}`}
+            {paid ? '✓ تم التحصيل!' : `${payMethod === 'cash' ? '💵' : '💳'} تحصيل ${total > 0 ? total.toLocaleString() + ' د.ع' : ''}`}
           </button>
         </div>
       </div>

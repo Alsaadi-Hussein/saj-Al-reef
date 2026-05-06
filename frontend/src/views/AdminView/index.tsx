@@ -3,19 +3,22 @@ import { api } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
 import { useStore } from '../../store/useStore'
 import type { Offer, AdminNotification, StockItem } from '../../types/index'
-import MenuMgmt    from './MenuMgmt'
-import OffersMgmt  from './OffersMgmt'
-import SalesView   from './SalesView'
-import ShiftView   from './ShiftView'
+import MenuMgmt         from './MenuMgmt'
+import OffersMgmt       from './OffersMgmt'
+import SalesView        from './SalesView'
+import ShiftView        from './ShiftView'
+import RatingsView      from './RatingsView'
+import ReservationsView from '../ReservationsView'
 
 // ─── Admin Sidebar ────────────────────────────────────────────
 const SIDEBAR_ITEMS = [
   { id: 'dashboard',    label: 'لوحة التحكم',   badge: 0 },
-  { id: 'menu',         label: 'إدارة القائمة', badge: 10 },
+  { id: 'menu',         label: 'إدارة القائمة', badge: 0 },
   { id: 'offers',       label: 'العروض',         badge: 0 },
   { id: 'sales',        label: 'المبيعات',       badge: 0 },
-  { id: 'shift',        label: 'إنهاء الوردية',  badge: 0 },
-  { id: 'reservations', label: 'الحجوزات',       badge: 3 },
+  { id: 'shift',        label: 'إدارة الوردية',  badge: 0 },
+  { id: 'reservations', label: 'الحجوزات',       badge: 0 },
+  { id: 'ratings',      label: 'التقييمات',      badge: 0 },
 ]
 
 // ─── Dashboard ────────────────────────────────────────────────
@@ -245,7 +248,8 @@ export default function AdminView() {
         {adminSub === 'offers'       && <OffersMgmt />}
         {adminSub === 'sales'        && <SalesView />}
         {adminSub === 'shift'        && <ShiftView />}
-        {adminSub === 'reservations' && <AdminDashboard />}
+        {adminSub === 'reservations' && <ReservationsView />}
+        {adminSub === 'ratings'      && <RatingsView />}
       </div>
 
       {/* Right Sidebar */}

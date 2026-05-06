@@ -152,8 +152,16 @@ export const api = {
   },
 
   // Rating
-  submitRating: async (_food: number, _service: number, overall: number, _comment: string): Promise<void> => {
-    await supabase.from('notifications').insert({ table_ref: '5', message: `تقييم ${'★'.repeat(overall)}`, time: 'الآن', color: '#4CAF50' })
+  submitRating: async (food: number, service: number, overall: number, comment: string, table = '5'): Promise<void> => {
+    const { error } = await supabase.from('ratings').insert({ table_ref: table, food, service, overall, comment })
+    if (error) {
+      await supabase.from('notifications').insert({ table_ref: table, message: `تقييم ${'★'.repeat(overall)}${comment ? ' · ' + comment.slice(0, 20) : ''}`, time: 'الآن', color: '#4CAF50' })
+    }
+  },
+
+  getRatings: async (): Promise<{ id: number; table_ref: string; food: number; service: number; overall: number; comment: string; created_at: string }[]> => {
+    const { data } = await supabase.from('ratings').select('*').order('created_at', { ascending: false }).limit(50)
+    return data ?? []
   },
 
   // Stock (fallback to static if no table exists)
@@ -211,6 +219,59 @@ export const api = {
         { day: 'الأحد',  val: 4.1 },
       ],
     }
+  },
+
+  // Menu CRUD
+  addMenuItem: async (item: { name: string; price: number; category: string; emoji: string; description: string; hot?: boolean }): Promise<MenuItem> => {
+    const { data, error } = await supabase.from('menu_items').insert({
+      name: item.name, price: item.price, category: item.category,
+      emoji: item.emoji, description: item.description, hot: item.hot ?? false,
+    }).select().single()
+    if (error) throw error
+    return mapMenuItem(data)
+  },
+
+  updateMenuItem: async (id: number, updates: Partial<{ name: string; price: number; description: string; emoji: string; hot: boolean }>): Promise<MenuItem> => {
+    const { data, error } = await supabase.from('menu_items').update(updates).eq('id', id).select().single()
+    if (error) throw error
+    return mapMenuItem(data)
+  },
+
+  deleteMenuItem: async (id: number): Promise<void> => {
+    const { error } = await supabase.from('menu_items').delete().eq('id', id)
+    if (error) throw error
+  },
+
+  // Sales data aggregated by day
+  getSalesData: async (): Promise<{ day: string; val: number; orders: number }[]> => {
+    const since = new Date()
+    since.setDate(since.getDate() - 7)
+    const { data } = await supabase.from('orders').select('created_at').gte('created_at', since.toISOString())
+    if (!data || data.length === 0) {
+      return [
+        { day: 'السبت',    val: 280000, orders: 48 },
+        { day: 'الجمعة',   val: 320000, orders: 62 },
+        { day: 'الخميس',   val: 240000, orders: 41 },
+        { day: 'الأربعاء', val: 360000, orders: 68 },
+        { day: 'الثلاثاء', val: 310000, orders: 55 },
+        { day: 'الاثنين',  val: 420000, orders: 78 },
+        { day: 'الأحد',    val: 410000, orders: 74 },
+      ]
+    }
+    const dayNames = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+    const AVG_ORDER = 15000
+    const grouped: Record<string, number> = {}
+    for (const o of data) {
+      const day = dayNames[new Date(o.created_at).getDay()]
+      grouped[day] = (grouped[day] ?? 0) + 1
+    }
+    return Object.entries(grouped).map(([day, count]) => ({ day, val: count * AVG_ORDER, orders: count }))
+  },
+
+  // Orders since timestamp (for shift summaries)
+  getOrdersSince: async (since: string): Promise<{ id: string; items: string; time: string }[]> => {
+    const { data } = await supabase.from('orders').select('id, items, time, created_at').gte('created_at', since).order('created_at')
+    return (data ?? []).map((r: any) => ({ id: r.id, items: r.items, time: r.time }))
   },
 
   // POS order

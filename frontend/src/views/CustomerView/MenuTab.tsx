@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../../store/useStore'
 import { api } from '../../lib/api'
-import type { MenuItem } from '../../types'
+import { supabase } from '../../lib/supabase'
+import type { MenuItem, Offer } from '../../types'
 
 const CATS = [
   { id: 'all', label: 'الكل'    },
@@ -22,10 +23,19 @@ const MEAL_IMG: Record<string, string> = {
 
 export default function MenuTab() {
   const { menuCategory, setMenuCategory, cart, setCartQty } = useStore()
-  const [items, setItems] = useState<MenuItem[]>([])
+  const [items,  setItems]  = useState<MenuItem[]>([])
+  const [offers, setOffers] = useState<Offer[]>([])
 
   useEffect(() => {
     api.getMenu().then(data => setItems(data as MenuItem[]))
+    api.getOffers().then(all => setOffers(all.filter(o => o.active)))
+
+    const ch = supabase.channel('menu-offers-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, () => {
+        api.getOffers().then(all => setOffers(all.filter(o => o.active)))
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
   }, [])
 
   const visible = menuCategory === 'all' ? items : items.filter(x => x.category === menuCategory)
@@ -48,6 +58,21 @@ export default function MenuTab() {
           </button>
         ))}
       </div>
+
+      {/* Active offers banners */}
+      {offers.map(o => (
+        <div
+          key={o.id}
+          className="flex items-center gap-2 px-3 py-2 mb-2 rounded-[11px] border border-gold/30"
+          style={{ background: 'linear-gradient(135deg,rgba(220,169,92,0.18),rgba(191,122,84,0.1))' }}
+        >
+          <span className="text-sm">🎁</span>
+          <div className="text-right flex-1">
+            <div className="text-[11px] text-gold font-medium">{o.title}</div>
+            {o.desc && <div className="text-[10px] text-gold/60 mt-0.5">{o.desc}</div>}
+          </div>
+        </div>
+      ))}
 
       {/* Hot item banner */}
       {hotItem && (
