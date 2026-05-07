@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { MenuItem, CartItem } from '../types/index'
 
 type NavTab = 'admin' | 'customer' | 'kitchen' | 'pos' | 'reservations'
-type AdminSub = 'dashboard' | 'menu' | 'offers' | 'sales' | 'shift' | 'reservations' | 'ratings'
+type AdminSub = 'dashboard' | 'menu' | 'offers' | 'sales' | 'shift' | 'reservations' | 'ratings' | 'stock'
 type KitchenSub = 'kds' | 'inventory' | 'alerts'
 
 interface Store {

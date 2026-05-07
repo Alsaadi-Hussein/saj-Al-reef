@@ -8,6 +8,7 @@ import OffersMgmt       from './OffersMgmt'
 import SalesView        from './SalesView'
 import ShiftView        from './ShiftView'
 import RatingsView      from './RatingsView'
+import AdminStockView   from './AdminStockView'
 import ReservationsView from '../ReservationsView'
 
 // ─── Admin Sidebar ────────────────────────────────────────────
@@ -19,6 +20,7 @@ const SIDEBAR_ITEMS = [
   { id: 'shift',        label: 'إدارة الوردية',  badge: 0 },
   { id: 'reservations', label: 'الحجوزات',       badge: 0 },
   { id: 'ratings',      label: 'التقييمات',      badge: 0 },
+  { id: 'stock',        label: 'إدارة المخزون', badge: 0 },
 ]
 
 // ─── Dashboard ────────────────────────────────────────────────
@@ -42,7 +44,7 @@ function AdminDashboard() {
       setTop(d.topItems)
       setWeekly(d.weeklySales)
     })
-    api.getStock().then(setStock)
+    setStock(api.getStock())
 
     const ch = supabase.channel('admin-dash')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
@@ -250,6 +252,7 @@ export default function AdminView() {
         {adminSub === 'shift'        && <ShiftView />}
         {adminSub === 'reservations' && <ReservationsView />}
         {adminSub === 'ratings'      && <RatingsView />}
+        {adminSub === 'stock'        && <AdminStockView />}
       </div>
 
       {/* Right Sidebar */}

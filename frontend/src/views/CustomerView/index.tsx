@@ -133,6 +133,7 @@ function HomeScreen({ onNav, lang, t }: { onNav: (tab: PhoneTab) => void; lang: 
   const [comment, setComment] = useState('')
   const [ratingDone, setRatingDone] = useState(false)
   const [ratingLoading, setRatingLoading] = useState(false)
+  const [screen, setScreen] = useState<'home' | 'booking' | 'details'>('home')
 
   useEffect(() => {
     // Fetch latest order for this table
@@ -173,6 +174,9 @@ function HomeScreen({ onNav, lang, t }: { onNav: (tab: PhoneTab) => void; lang: 
     setRatingDone(true)
     setRatingLoading(false)
   }
+
+  if (screen === 'booking') return <BookingScreen lang={lang} onBack={() => setScreen('home')} />
+  if (screen === 'details') return <DetailsScreen lang={lang} onBack={() => setScreen('home')} />
 
   return (
     <div className={`p-3.5 space-y-3 ${lang === 'en' ? '' : ''}`} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
@@ -222,10 +226,10 @@ function HomeScreen({ onNav, lang, t }: { onNav: (tab: PhoneTab) => void; lang: 
 
       {/* Action buttons */}
       <div className="grid grid-cols-2 gap-2">
-        <button className="bg-c2 border border-c3 rounded-[9px] py-2.5 text-[11px] text-white/70 hover:border-gold/40 transition-all cursor-pointer">
+        <button onClick={() => setScreen('details')} className="bg-c2 border border-c3 rounded-[9px] py-2.5 text-[11px] text-white/70 hover:border-gold/40 transition-all cursor-pointer">
           {t.details}
         </button>
-        <button className="bg-c2 border border-c3 rounded-[9px] py-2.5 text-[11px] text-white/70 hover:border-gold/40 transition-all cursor-pointer">
+        <button onClick={() => setScreen('booking')} className="bg-c2 border border-c3 rounded-[9px] py-2.5 text-[11px] text-white/70 hover:border-gold/40 transition-all cursor-pointer">
           {t.book}
         </button>
       </div>
@@ -285,6 +289,124 @@ function HomeScreen({ onNav, lang, t }: { onNav: (tab: PhoneTab) => void; lang: 
             </button>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Booking Screen ──────────────────────────────────────────
+function BookingScreen({ lang, onBack }: { lang: Lang; onBack: () => void }) {
+  const [form, setForm] = useState({ name: '', phone: '', date: '', time: '', guests: '2' })
+  const [sent, setSent] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const isAr = lang === 'ar'
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.name.trim() || !form.phone.trim()) return
+    setLoading(true)
+    try {
+      await api.createReservation({
+        firstName: form.name, lastName: '', phone: form.phone,
+        date: form.date, time: form.time, guests: parseInt(form.guests) || 2,
+        section: '', notes: '',
+      })
+      setSent(true)
+    } catch {}
+    setLoading(false)
+  }
+
+  const f = (k: string, v: string) => setForm(prev => ({ ...prev, [k]: v }))
+
+  return (
+    <div className="p-3.5" dir={isAr ? 'rtl' : 'ltr'}>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={onBack} className="text-gold text-[18px] cursor-pointer bg-transparent border-none leading-none">←</button>
+        <span className="text-[13px] font-semibold text-white">{isAr ? 'حجز طاولة' : 'Book a Table'}</span>
+      </div>
+      {sent ? (
+        <div className="text-center py-10">
+          <div className="text-[40px] mb-3">✅</div>
+          <div className="text-[14px] font-semibold text-ok mb-2">{isAr ? 'تم تأكيد الحجز!' : 'Booking Confirmed!'}</div>
+          <div className="text-[12px] text-white/45 mb-6">{isAr ? 'سنتصل بك للتأكيد' : "We'll confirm by phone"}</div>
+          <button onClick={onBack} className="py-2 px-6 rounded-[9px] text-[12px] text-black cursor-pointer" style={{ background: '#DCA95C' }}>
+            {isAr ? 'رجوع' : 'Back'}
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="space-y-3">
+          <input value={form.name} onChange={e => f('name', e.target.value)} placeholder={isAr ? 'الاسم *' : 'Name *'} required dir={isAr ? 'rtl' : 'ltr'}
+            className="w-full bg-c2 border border-c3 rounded-[9px] px-3 py-2 text-[12px] text-white placeholder:text-white/25 focus:outline-none focus:border-gold/50" />
+          <input value={form.phone} onChange={e => f('phone', e.target.value)} placeholder={isAr ? 'رقم الهاتف *' : 'Phone *'} required type="tel"
+            className="w-full bg-c2 border border-c3 rounded-[9px] px-3 py-2 text-[12px] text-white placeholder:text-white/25 focus:outline-none focus:border-gold/50" />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={form.date} onChange={e => f('date', e.target.value)} type="date"
+              className="bg-c2 border border-c3 rounded-[9px] px-3 py-2 text-[12px] text-white focus:outline-none focus:border-gold/50" />
+            <input value={form.time} onChange={e => f('time', e.target.value)} type="time"
+              className="bg-c2 border border-c3 rounded-[9px] px-3 py-2 text-[12px] text-white focus:outline-none focus:border-gold/50" />
+          </div>
+          <select value={form.guests} onChange={e => f('guests', e.target.value)} dir={isAr ? 'rtl' : 'ltr'}
+            className="w-full bg-c2 border border-c3 rounded-[9px] px-3 py-2 text-[12px] text-white focus:outline-none focus:border-gold/50 cursor-pointer">
+            {[1,2,3,4,5,6,7,8,10,12].map(n => <option key={n} value={n}>{isAr ? `${n} أشخاص` : `${n} guests`}</option>)}
+          </select>
+          <button type="submit" disabled={loading}
+            className="w-full py-3 rounded-[11px] text-[13px] font-semibold text-black hover:opacity-90 active:scale-95 transition-all cursor-pointer disabled:opacity-50 border-none"
+            style={{ background: '#DCA95C' }}>
+            {loading ? '...' : (isAr ? '✓ تأكيد الحجز' : '✓ Confirm Booking')}
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+// ─── Details Screen ───────────────────────────────────────────
+function DetailsScreen({ lang, onBack }: { lang: Lang; onBack: () => void }) {
+  const isAr = lang === 'ar'
+  const info = [
+    { icon: '🕐', label: isAr ? 'أوقات العمل'     : 'Hours',    val: isAr ? 'يومياً 12 ظهراً – 12 منتصف الليل' : 'Daily 12PM – 12AM' },
+    { icon: '📍', label: isAr ? 'الموقع'            : 'Location', val: isAr ? 'بغداد، الكرادة — بجانب دوار الكرادة' : 'Baghdad, Karrada' },
+    { icon: '📞', label: isAr ? 'الهاتف'            : 'Phone',    val: '+964 770 123 4567' },
+    { icon: '🌐', label: isAr ? 'واي فاي'           : 'Wi-Fi',    val: 'SajAlreef_Guest' },
+    { icon: '🅿️', label: isAr ? 'موقف سيارات'      : 'Parking',  val: isAr ? 'مجاني أمام المطعم' : 'Free in front' },
+  ]
+  const cats = [
+    { emoji: '🥩', name: isAr ? 'ساج' : 'Saj' },
+    { emoji: '🍕', name: isAr ? 'بيتزا' : 'Pizza' },
+    { emoji: '🥗', name: isAr ? 'مقبلات' : 'Starters' },
+    { emoji: '🍵', name: isAr ? 'مشروبات' : 'Drinks' },
+    { emoji: '🍯', name: isAr ? 'حلويات' : 'Desserts' },
+  ]
+  return (
+    <div className="p-3.5" dir={isAr ? 'rtl' : 'ltr'}>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={onBack} className="text-gold text-[18px] cursor-pointer bg-transparent border-none leading-none">←</button>
+        <span className="text-[13px] font-semibold text-white">{isAr ? 'عن المطعم' : 'About'}</span>
+      </div>
+      <div className="text-center mb-4">
+        <div className="w-14 h-14 rounded-full bg-gold flex items-center justify-center text-black text-[22px] font-bold mx-auto mb-2">S</div>
+        <div className="text-[15px] font-semibold text-gold">{isAr ? 'ساج الريف' : 'SAJ ALREEF'}</div>
+        <div className="text-[11px] text-white/40 mt-0.5">{isAr ? 'مطعم عراقي أصيل منذ 2008' : 'Authentic Iraqi cuisine since 2008'}</div>
+      </div>
+      <div className="space-y-2.5 mb-4">
+        {info.map((item, i) => (
+          <div key={i} className="flex items-start gap-3 bg-c2 border border-c3 rounded-[10px] px-3 py-2.5">
+            <span className="text-[16px] flex-shrink-0">{item.icon}</span>
+            <div className="text-right flex-1">
+              <div className="text-[10px] text-white/40">{item.label}</div>
+              <div className="text-[12px] text-white mt-0.5">{item.val}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="text-[11px] text-white/40 text-right mb-2">{isAr ? 'أقسام القائمة' : 'Menu Categories'}</div>
+      <div className="flex flex-wrap gap-2">
+        {cats.map((c, i) => (
+          <div key={i} className="flex items-center gap-1.5 bg-c2 border border-c3 rounded-full px-3 py-1">
+            <span className="text-[14px]">{c.emoji}</span>
+            <span className="text-[11px] text-white/70">{c.name}</span>
+          </div>
+        ))}
       </div>
     </div>
   )

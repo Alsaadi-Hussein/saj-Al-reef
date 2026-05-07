@@ -37,6 +37,23 @@ function KdsScreen() {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'ready' as const } : o))
   }
 
+  function printOrder(o: KitchenOrder) {
+    const w = window.open('', '_blank', 'width=320,height=480')
+    if (!w) return
+    w.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><title>${o.id}</title>
+    <style>body{font-family:monospace;font-size:14px;text-align:right;padding:20px;direction:rtl}
+    h2{font-size:18px;margin:0 0 12px}hr{border:none;border-top:1px dashed #000;margin:10px 0}
+    .row{display:flex;justify-content:space-between}.items{margin:10px 0;line-height:1.8}
+    .footer{font-size:11px;color:#555;margin-top:16px;text-align:center}</style></head>
+    <body><h2>ساج الريف</h2><hr>
+    <div class="row"><span>${o.time}</span><span><b>طاولة ${o.table}</b></span></div>
+    <div class="row"><span></span><span>رقم الطلب: <b>${o.id}</b></span></div><hr>
+    <div class="items">${o.items.split('،').map(i => `<div>${i.trim()}</div>`).join('')}</div><hr>
+    <div class="footer">شكراً لزيارتكم — ساج الريف</div>
+    <script>setTimeout(()=>{window.print();window.close()},200)</script></body></html>`)
+    w.document.close()
+  }
+
   const activeOrders = orders.filter(o => o.status === 'new')
   const urgentCount  = activeOrders.filter(o => api.getOrderMinutesAgo(o) > 15).length
 
@@ -100,14 +117,22 @@ function KdsScreen() {
                   <span className="text-[11px] text-white/30">⏱</span>
                 </div>
 
-                {/* Action */}
-                <button
-                  onClick={() => markReady(o.id)}
-                  className="w-full py-2 rounded-[9px] text-[12px] font-medium text-black hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer"
-                  style={{ background: '#DCA95C' }}
-                >
-                  ✓ Ready / تم
-                </button>
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => printOrder(o)}
+                    className="flex-shrink-0 px-3 py-2 rounded-[9px] text-[12px] font-medium bg-c2 border border-c3 text-white/60 hover:bg-c3 cursor-pointer transition-all"
+                  >
+                    🖨
+                  </button>
+                  <button
+                    onClick={() => markReady(o.id)}
+                    className="flex-1 py-2 rounded-[9px] text-[12px] font-medium text-black hover:opacity-90 active:scale-95 transition-all duration-200 cursor-pointer"
+                    style={{ background: '#DCA95C' }}
+                  >
+                    ✓ Ready / تم
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -138,7 +163,7 @@ function KdsScreen() {
 // ─── Inventory Screen ─────────────────────────────────────────
 function InventoryScreen() {
   const [stock, setStock] = useState<StockItem[]>([])
-  useEffect(() => { api.getStock().then(setStock) }, [])
+  useEffect(() => { setStock(api.getStock()) }, [])
 
   return (
     <div className="flex-1 overflow-y-auto p-5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#343434 transparent' }}>

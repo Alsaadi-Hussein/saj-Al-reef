@@ -169,22 +169,25 @@ export const api = {
     })
   },
 
-  // Stock (fallback to static if no table exists)
-  getStock: async (): Promise<StockItem[]> => {
+  // Stock — admin-managed via localStorage, synced to kitchen in same browser
+  getStock: (): StockItem[] => {
     try {
-      const { data, error } = await supabase.from('stock').select('*').order('id')
-      if (error || !data || data.length === 0) throw new Error('no data')
-      return data.map((r: any) => ({ id: r.id, name: r.name, current: r.current, minimum: r.minimum, unit: r.unit }))
-    } catch {
-      return [
-        { id: 1, name: 'جبنة موزاريلا', current: 3.5, minimum: 4,  unit: 'كغ' },
-        { id: 2, name: 'زيت زيتون',     current: 1.5, minimum: 5,  unit: 'لتر' },
-        { id: 3, name: 'جبن كريمي',     current: 2,   minimum: 3,  unit: 'كغ' },
-        { id: 4, name: 'دقيق',           current: 12,  minimum: 10, unit: 'كغ' },
-        { id: 5, name: 'طماطم',          current: 8,   minimum: 5,  unit: 'كغ' },
-        { id: 6, name: 'لحم بقري',       current: 5,   minimum: 4,  unit: 'كغ' },
-      ]
-    }
+      const raw = localStorage.getItem('saj_stock')
+      if (raw) return JSON.parse(raw)
+    } catch {}
+    const defaults: StockItem[] = [
+      { id: 1, name: 'جبنة موزاريلا', current: 3.5, minimum: 4,  unit: 'كغ' },
+      { id: 2, name: 'زيت زيتون',     current: 1.5, minimum: 5,  unit: 'لتر' },
+      { id: 3, name: 'جبن كريمي',     current: 2,   minimum: 3,  unit: 'كغ' },
+      { id: 4, name: 'دقيق',           current: 12,  minimum: 10, unit: 'كغ' },
+      { id: 5, name: 'طماطم',          current: 8,   minimum: 5,  unit: 'كغ' },
+      { id: 6, name: 'لحم بقري',       current: 5,   minimum: 4,  unit: 'كغ' },
+    ]
+    localStorage.setItem('saj_stock', JSON.stringify(defaults))
+    return defaults
+  },
+  saveStock: (items: StockItem[]): void => {
+    localStorage.setItem('saj_stock', JSON.stringify(items))
   },
 
   // Admin bundle
