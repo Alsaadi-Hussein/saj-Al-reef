@@ -151,17 +151,22 @@ export const api = {
     await supabase.from('notifications').insert({ table_ref: table.replace('T', ''), message: `ملاحظة: ${note.slice(0, 30)}`, time: 'الآن', color: '#4CAF50' })
   },
 
-  // Rating
+  // Rating — stored in notifications table with RATING: prefix so no extra table is needed
   submitRating: async (food: number, service: number, overall: number, comment: string, table = '5'): Promise<void> => {
-    const { error } = await supabase.from('ratings').insert({ table_ref: table, food, service, overall, comment })
-    if (error) {
-      await supabase.from('notifications').insert({ table_ref: table, message: `تقييم ${'★'.repeat(overall)}${comment ? ' · ' + comment.slice(0, 20) : ''}`, time: 'الآن', color: '#4CAF50' })
-    }
+    const msg = `RATING:${food}:${service}:${overall}:${comment.replace(/:/g, ';')}`
+    await supabase.from('notifications').insert({ table_ref: table, message: msg, time: nowStr(), color: '#9C27B0' })
   },
 
-  getRatings: async (): Promise<{ id: number; table_ref: string; food: number; service: number; overall: number; comment: string; created_at: string }[]> => {
-    const { data } = await supabase.from('ratings').select('*').order('created_at', { ascending: false }).limit(50)
-    return data ?? []
+  getRatings: async (): Promise<{ table_ref: string; food: number; service: number; overall: number; comment: string; created_at: string }[]> => {
+    const { data } = await supabase.from('notifications').select('*').like('message', 'RATING:%').order('created_at', { ascending: false }).limit(50)
+    return (data ?? []).map((r: any) => {
+      const [, food, service, overall, ...rest] = r.message.split(':')
+      return {
+        table_ref: r.table_ref, created_at: r.created_at,
+        food: parseInt(food) || 5, service: parseInt(service) || 5, overall: parseInt(overall) || 5,
+        comment: rest.join(':').replace(/;/g, ':'),
+      }
+    })
   },
 
   // Stock (fallback to static if no table exists)
